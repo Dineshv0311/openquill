@@ -23,7 +23,7 @@ Built with **Next.js 14**, **TypeScript**, and **Tailwind CSS**, OpenQuill combi
 * **AI Paraphraser**: 8 writing modes + 4-level synonym density slider.
 * **Plagiarism Checker**: N-gram shingling across 60M+ live web articles with downloadable reports.
 * **Grammar & Spell Checker**: Levenshtein edit-distance corrections, duplicate word removers & one-click fixes.
-* **AI Content Detector**: Sentence-level burstiness ($\sigma$) and probability heatmaps.
+* **AI Content Detector**: Full multi-page PDF upload, page-by-page AI scoring, sentence-level burstiness ($\sigma$), and downloadable audit reports.
 * **AI Text Humanizer**: Bypasses AI detection by stripping GPT clichés and introducing natural human rhythm.
 * **AI Co-Writer Chat**: Context-aware brainstorming, outlining, and real-time research.
 * **Document Translator**: Neural multi-language translation (Spanish, French, German, Hindi, Japanese, etc.).
@@ -96,9 +96,12 @@ By inspecting the compiled production bundles (`paraphraser-core` and `paraphras
 - **Duplicate Word & Phrase Filter**: Catches repeated words (`Basically, basically` &rarr; `Basically`) and redundant phrases.
 - **Syntactic Repair**: Identifies invalid verb groups (e.g., `was be fair` &rarr; `To be fair`) and missing capitalization.
 
-### 4. 🔍 AI Content Detector
-- **Burstiness Standard Deviation ($\sigma$)**: Analyzes sentence-length distributions to separate flat AI prose from rhythmic human writing.
-- **Heatmap Scoring**: Classifies individual sentences into `Human` (Green), `Mixed` (Yellow), and `AI` (Red).
+### 4. 🔍 AI Content Detector (with Full PDF Support)
+- **Full Multi-Page PDF Document Scanning**: Upload complete PDF files or paste raw text to verify whether content is human-written or machine-generated.
+- **Page-by-Page AI Breakdown**: Displays individual page scores, word counts, and excerpt previews for multi-page documents.
+- **Burstiness Variance Scoring**: Evaluates the standard deviation ($\sigma$) of sentence lengths across the document (AI models write with uniform 16-20 word sentence lengths; humans write with high variance).
+- **Per-Sentence Classification**: Flags individual sentences as `Human` (Green), `Mixed` (Yellow), and `AI` (Red).
+- **Downloadable PDF Audit Report**: Generates and downloads full document audit reports with page-level metrics and sentence breakdowns.
 
 ### 5. ✨ AI Text Humanizer
 - **Cliché Cleaner**: Eliminates ChatGPT signatures (*"delve into"*, *"testament to"*, *"multifaceted"*, *"pivotal role"*).
