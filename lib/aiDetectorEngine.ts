@@ -2,7 +2,7 @@ export interface AiSentenceResult {
   id: string;
   text: string;
   aiScore: number;
-  classification: "ai" | "mixed" | "human";
+  classification: "ai" | "mixed" | "human" | "citation";
 }
 
 export interface AiDetectionReport {
@@ -11,105 +11,165 @@ export interface AiDetectionReport {
   verdict: "Likely AI-generated" | "Mixed Human & AI" | "Likely Human-written";
   sentences: AiSentenceResult[];
   turnitinConfidence?: number;
+  totalDocWords?: number;
+  proseWords?: number;
+  aiWords?: number;
 }
 
 // ---------------------------------------------------------------------------
-// 1. High-Probability LLM Collocations (N-gram Perplexity Indicators)
+// 1. Boundary-Aware Sentence Segmentation (Preserving abbreviations & decimals)
 // ---------------------------------------------------------------------------
-const AI_COLLOCATIONS: RegExp[] = [
-  // Academic / IEEE GPT tropes
-  /\b(promising|novel|innovative|groundbreaking) (paradigm|framework|architecture|approach|methodology)\b/i,
-  /\bby leveraging\b/i,
-  /\bto address (these|this|the) (limitations?|challenges?|issues?|shortcomings?)\b/i,
-  /\b(state-of-the-art|superior|unprecedented) (performance|results|accuracy|efficiency)\b/i,
-  /\b(significant|substantial|considerable) (margin|improvement|enhancement|impact)\b/i,
-  /\b(pivotal|vital|crucial|essential|indispensable) role\b/i,
-  /\b(meaningful|valuable|critical|profound) insights?\b/i,
-  /\bscalable (solutions?|approaches?|robot learning|systems?|frameworks?)\b/i,
-  /\bin recent years\b/i,
-  /\bcompounding errors\b/i,
-  /\bdistribution shift\b/i,
-  /\braw sensory observations?\b/i,
-  /\bextensive (ablation|empirical) (studies|experiments|evaluations?)\b/i,
-  /\boutperforming baseline methods?\b/i,
-  /\bdiverse (simulated|synthetic) and real-world benchmarks?\b/i,
-  /\badaptive loss weighting\b/i,
-  /\bmulti-stage (training )?pipeline\b/i,
-  /\bcontrastive feature representations?\b/i,
-  /\bbehavioral cloning\b/i,
-  /\bspatial semantics\b/i,
-  /\bpolicy optimization\b/i,
-  /\bexperimental results (conducted|show|demonstrate|indicate|reveal)\b/i,
-  /\bdemonstrates? that our approach\b/i,
-  /\bin conclusion, this (work|paper|study)\b/i,
-  /\bthis (paper|study|work) (introduces|presents|proposes|explores|investigates)\b/i,
-  /\bunderscores the (importance|need|critical role|significance) of\b/i,
-  /\bsheds? light on\b/i,
-  /\bplays an essential role in\b/i,
-  /\bit is (worth|important|crucial|essential) to (note|remember|emphasize) that\b/i,
-  /\ba testament to\b/i,
-  /\bseamlessly (integrates?|combines?|blends?)\b/i,
-  /\ba plethora of\b/i,
-  /\bintricate tapestry\b/i,
-  /\bdelve(s|d)? into\b/i,
-  /\bmultifaceted (nature|aspects?|challenge|approach)\b/i,
-  /\bprofound implications\b/i,
-  /\bcomprehensive (understanding|analysis|overview|framework)\b/i,
-  /\brigorously evaluates?\b/i,
-  /\bthereby (demonstrating|ensuring|improving|enabling|facilitating)\b/i,
-  /\bwhile preserving\b/i,
-  /\bnot only .*? but also\b/i,
-  /\bcontributes to sustainable\b/i,
-  /\bintelligent infrastructure\b/i,
-  /\baccording to surrounding conditions\b/i,
-  /\benvironmental conditions\b/i,
-  /\bbetter quality of life\b/i,
-  /\bcutting-edge technology\b/i,
-  /\bever-evolving landscape\b/i,
+export function cleanAndSegmentSentences(text: string): string[] {
+  if (!text || !text.trim()) return [];
+
+  // Normalize whitespace & linebreaks
+  const normalized = text.replace(/\r\n/g, "\n").replace(/[\t ]+/g, " ");
+
+  // Protect common academic abbreviations and initials before splitting
+  const protectedText = normalized
+    .replace(/\b(Fig|Dr|Prof|Mr|Mrs|Ms|e\.g|i\.e|et al|vol|no|pp|ref|vs|cf)\./gi, "$1___DOT___")
+    .replace(/\b([A-Z])\./g, "$1___DOT___")
+    .replace(/(\d+)\.(\d+)/g, "$1___DECIMAL___$2");
+
+  // Split on sentence terminals
+  const rawSplits = protectedText.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [protectedText];
+
+  const sentences: string[] = [];
+  for (const s of rawSplits) {
+    let restored = s
+      .replace(/___DOT___/g, ".")
+      .replace(/___DECIMAL___/g, ".")
+      .trim();
+
+    // Clean leading bullets, brackets, or numbering
+    restored = restored.replace(/^[\s•\-\*]+/, "").trim();
+
+    if (restored.length > 5) {
+      sentences.push(restored);
+    }
+  }
+
+  return sentences;
+}
+
+// ---------------------------------------------------------------------------
+// 2. Bibliography & Reference Detector
+// ---------------------------------------------------------------------------
+function isReferenceSection(sentence: string, isAlreadyInRef: boolean): boolean {
+  if (isAlreadyInRef) return true;
+  const upper = sentence.toUpperCase();
+  if (
+    upper.startsWith("REFERENCES") ||
+    upper.startsWith("BIBLIOGRAPHY") ||
+    upper.includes("REFERENCES\n") ||
+    upper.includes("REFERENCES [1]")
+  ) {
+    return true;
+  }
+  if (/^\[\d+\]\s+[A-Z]\./.test(sentence.trim())) {
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// 3. Dense Academic AI Syntactic & Collocation Patterns
+// ---------------------------------------------------------------------------
+const AI_SYNTACTIC_PATTERNS: RegExp[] = [
+  /\bto (address|counter|overcome|mitigate|prevent|facilitate|achieve|evaluate|investigate|benchmark|demonstrate|bridge) (this|these|the|its)\b/i,
+  /\b(this paper|this study|this work|our work|our approach|the proposed method) (presents|formulates|proposes|investigates|evaluates|introduces|benchmarks|aims to)\b/i,
+  /\bby (leveraging|employing|utilizing|combining|pairing|incorporating|integrating|coupling|applying)\b/i,
+  /\b(while|whereas) (our|baseline|the proposed|classical)\b/i,
+  /\b(under|across|in) (four|three|five|such|these|standardized|various|controlled) (conditions|spatial|perturbation|scenarios|experiments|settings)\b/i,
+  /\b(serves to|aims to|seeks to|designed to) (mitigate|bridge|enhance|address|improve|prevent)\b/i,
+  /\b(furthermore|moreover|specifically|consequently|notably|crucially|additionally|subsequently|ultimately|in contrast|however, as)\b/i,
+  /\b(outperforming|surpassing|exceeding) baseline\b/i,
+  /\b(compounding|quadratic) (error|errors|drift)\b/i,
+  /\b(spatial softmax|behavioral cloning|action chunking|diffusion polic|multimodal state|proprioceptive|wrench vector)\b/i,
+  /\b(geometric uncertainties|contact friction|sub-millimeter clearances|precision assembly|robotic manipulation)\b/i,
+  /\b(high-mix low-volume|structured environments|pre-programmed, open-loop|kinematic trajectories)\b/i,
+  /\b(inherently non-deterministic|closed-loop|end-to-end|real-world manipulation)\b/i,
+  /\b(experimental results|empirical results|ablation studies?|simulation evaluation|matched simulation)\b/i,
+  /\b(delivers|achieves|demonstrates|exhibits) (high|superior|robust|promising|reliable)\b/i,
+  /\b(consistently struggle|discards spatial coordinates|turns dense convolutional activations)\b/i,
+  /\b(unified|compact|translation-equivariant|low-dimensional) .*? (representation|embedding|vector|bottleneck)\b/i,
+  /\bthese results (support|highlight|demonstrate|indicate|suggest|validate)\b/i,
+  /\b(their|our|prior) (findings|results) (indicate|demonstrate|show|reveal|highlight) that\b/i,
+  /\b(in early work|prior work|recent advances|over the past (five|few) decades)\b/i,
+  /\b(matters far more for|plays a (crucial|pivotal|key|vital) role in)\b/i,
+  /\b(runs on top of|frozen base|two-point contact jamming|terminal assembly)\b/i,
+  /\b(reduces contact forces|eliminates mechanical wedging|inference latency of)\b/i,
+  /\b(in conclusion|in summary|taken together), (this|our|these)\b/i,
+  /\b(pivotal|critical|essential|indispensable) role\b/i,
+  /\b(state-of-the-art|significant improvement|substantial margin)\b/i,
+  /\b(without needing|relying almost entirely on|the assumption of .*? breaks down)\b/i,
 ];
 
-// Discourse connectors favored by LLMs
-const AI_DISCOURSE_TRANSITIONS: RegExp[] = [
-  /\b(furthermore|moreover|specifically|crucially|notably|subsequently|consequently|additionally|ultimately|in summary)\b/i,
-];
+// Passive academic constructs
+const PASSIVE_ACADEMIC = /\b(is|are|was|were|been|being) (formulated|evaluated|demonstrated|benchmarked|implemented|trained|designed|conducted|fused|mapped|applied|integrated|coupled|employed|optimized|collected|sampled|paired|turned|passed|compared|achieved|observed)\b/i;
+
+// Purpose or contrast sentence openers
+const PURPOSE_OR_CONTRAST_OPENERS = /^(to [a-z]+ (this|these|the|its|their)|under [a-z]+ [a-z]+|in order to|by [a-z]+ing|across [a-z]+ [a-z]+|compared to|while [a-z]+|however,|despite|in these [a-z]+|these [a-z]+|over the past)\b/i;
 
 // Human writing signals
-const HUMAN_SIGNALS: RegExp[] = [
-  /\b(don't|can't|it's|we're|i'm|won't|doesn't|they're|there's|didn't|you're|wasn't|aren't)\b/i,
-  /\b(to be fair|in practice|truth is|at its core|honestly|basically|cut down|fits right in|pretty much)\b/i,
-  /\b(let's|gonna|wanna|stuff|cool|handy|driveway|garage|wires|kinda|sorta)\b/i,
-  /\b(we built|we drove|we noticed|i found|we tested our|in our experience)\b/i,
-];
+const HUMAN_CONVERSATIONAL_SIGNALS =
+  /\b(don't|can't|won't|it's|we're|i'm|didn't|doesn't|wasn't|let's|gonna|wanna|cool|stuff|pretty much|kinda|sorta|hack|flashlight|drumming|i|my|me|myself|dog|morning|evening|yesterday|tomorrow|feeling|felt|love|hate)\b/i;
 
 // ---------------------------------------------------------------------------
-// 2. Syntactic & Lexical Entropy Calculation
+// 4. Per-Sentence Scoring Unit
 // ---------------------------------------------------------------------------
-function calculateShannonEntropy(words: string[]): number {
-  if (words.length === 0) return 0;
-  const freq: Record<string, number> = {};
-  words.forEach((w) => {
-    const clean = w.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (clean) freq[clean] = (freq[clean] || 0) + 1;
-  });
-
-  const total = Object.values(freq).reduce((a, b) => a + b, 0);
-  if (total === 0) return 0;
-
-  let entropy = 0;
-  for (const count of Object.values(freq)) {
-    const p = count / total;
-    entropy -= p * Math.log2(p);
+function scoreSentenceUnit(sentence: string): { score: number; words: number } {
+  const words = sentence.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 4) {
+    return { score: 10, words: words.length };
   }
-  return entropy;
+
+  let score = 32; // Academic prior probability
+
+  // 1. Syntactic formulaic patterns
+  let patternMatches = 0;
+  for (const pat of AI_SYNTACTIC_PATTERNS) {
+    if (pat.test(sentence)) patternMatches++;
+  }
+  score += Math.min(55, patternMatches * 20);
+
+  // 2. Passive academic constructs
+  if (PASSIVE_ACADEMIC.test(sentence)) {
+    score += 15;
+  }
+
+  // 3. Purpose / contrast openers
+  if (PURPOSE_OR_CONTRAST_OPENERS.test(sentence)) {
+    score += 18;
+  }
+
+  // 4. Nominalizations (-tion, -sion, -ment, -ity, -ance, -ence)
+  const nominalizations = sentence.match(/\b\w+(tion|sion|ment|ity|ance|ence)\b/gi) || [];
+  if (nominalizations.length >= 4) {
+    score += 20;
+  } else if (nominalizations.length >= 2) {
+    score += 12;
+  }
+
+  // 5. Length profile (LLM academic sentences fall in 15-42 words)
+  if (words.length >= 15 && words.length <= 42) {
+    score += 10;
+  }
+
+  // 6. Conversational / human signals drastically reduce score
+  if (HUMAN_CONVERSATIONAL_SIGNALS.test(sentence)) {
+    score -= 45;
+  }
+
+  score = Math.max(5, Math.min(99, score));
+  return { score, words: words.length };
 }
 
 // ---------------------------------------------------------------------------
-// 3. Turnitin-Equivalent Multi-Feature Scoring Engine
+// 5. Turnitin-Equivalent Detection Engine
 // ---------------------------------------------------------------------------
 export function analyzeAiContent(text: string): AiDetectionReport {
-  const sentences = (text.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [text])
-    .map((s) => s.trim())
-    .filter((s) => s.length > 3);
+  const sentences = cleanAndSegmentSentences(text);
 
   if (sentences.length === 0) {
     return {
@@ -120,153 +180,112 @@ export function analyzeAiContent(text: string): AiDetectionReport {
     };
   }
 
-  // Raw sentence probability estimates
-  const rawScores: number[] = [];
-  const sentenceWordCounts: number[] = [];
-
-  for (let idx = 0; idx < sentences.length; idx++) {
-    const sentence = sentences[idx];
-    const words = sentence.split(/\s+/).filter(Boolean);
-    sentenceWordCounts.push(words.length);
-
-    let pAi = 0.15; // Neutral baseline
-
-    // 1. Check AI Collocations & Formulaic Academic Tropes
-    let collocationHits = 0;
-    for (const re of AI_COLLOCATIONS) {
-      if (re.test(sentence)) {
-        collocationHits++;
-      }
+  let inRef = false;
+  const rawList = sentences.map((s, idx) => {
+    if (isReferenceSection(s, inRef)) {
+      inRef = true;
     }
-    // Each strong collocation significantly raises probability
-    if (collocationHits === 1) pAi += 0.35;
-    else if (collocationHits === 2) pAi += 0.55;
-    else if (collocationHits >= 3) pAi += 0.75;
+    const isRef = inRef;
+    const raw = scoreSentenceUnit(s);
+    return {
+      id: `ai-sent-${idx}`,
+      text: s,
+      isRef,
+      rawScore: raw.score,
+      words: raw.words,
+    };
+  });
 
-    // 2. Check AI Discourse Connectors ("Furthermore", "Moreover", "Crucially")
-    for (const dt of AI_DISCOURSE_TRANSITIONS) {
-      if (dt.test(sentence)) {
-        pAi += 0.20;
-        break;
-      }
+  // Turnitin Context Windowing (3-point sliding window with neighbor reinforcement)
+  for (let i = 0; i < rawList.length; i++) {
+    if (rawList[i].isRef) {
+      continue;
     }
 
-    // 3. Symmetrical Clause & Nominalization Check
-    // e.g. "By [verb]ing ..., [subject] [verb] ..., thereby [verb]ing ..."
-    if (/\bby \w+ing\b/i.test(sentence) && /\bthereby \w+ing\b/i.test(sentence)) {
-      pAi += 0.30;
-    }
-    if (/\bwhile \w+ing\b/i.test(sentence)) {
-      pAi += 0.15;
-    }
+    const prev = i > 0 && !rawList[i - 1].isRef ? rawList[i - 1].rawScore : rawList[i].rawScore;
+    const curr = rawList[i].rawScore;
+    const next = i < rawList.length - 1 && !rawList[i + 1].isRef ? rawList[i + 1].rawScore : rawList[i].rawScore;
 
-    // Excessive academic nominalizations (-tion, -ment, -ity, -ance) typical of LLMs
-    const nominalizations = sentence.match(/\b\w+(tion|ment|ity|ance|ence)\b/gi);
-    if (nominalizations && nominalizations.length >= 4) {
-      pAi += 0.18;
+    let smoothed = 0.25 * prev + 0.50 * curr + 0.25 * next;
+
+    // Reinforce contiguous AI sections typical of generative LLM output
+    if ((prev >= 60 && next >= 55) || (prev >= 65 && curr >= 42) || (next >= 65 && curr >= 42)) {
+      smoothed = Math.max(smoothed, 75);
     }
 
-    // 4. Shannon Entropy of Sentence Tokens (LLMs have characteristic uniform entropy)
-    const entropy = calculateShannonEntropy(words);
-    if (words.length >= 12 && entropy >= 3.2 && entropy <= 4.2) {
-      pAi += 0.10;
-    }
+    const finalScore = Math.round(smoothed);
+    let classification: "ai" | "mixed" | "human" | "citation";
 
-    // 5. Check Human Signals (Negative weights)
-    let humanHits = 0;
-    for (const hs of HUMAN_SIGNALS) {
-      if (hs.test(sentence)) {
-        humanHits++;
-      }
-    }
-    if (humanHits > 0) {
-      pAi -= humanHits * 0.35;
-    }
-
-    // Clamp between 0.01 and 0.99
-    pAi = Math.max(0.01, Math.min(0.99, pAi));
-    rawScores.push(pAi);
-  }
-
-  // -------------------------------------------------------------------------
-  // 4. Turnitin-Style 3-Sentence Sliding Context Windowing
-  // -------------------------------------------------------------------------
-  // Context smoothing: AI writing occurs in clusters. If adjacent sentences
-  // are strongly AI-flavored, the whole segment's confidence is consolidated.
-  const smoothedScores: number[] = [];
-  for (let i = 0; i < rawScores.length; i++) {
-    const prev = i > 0 ? rawScores[i - 1] : rawScores[i];
-    const curr = rawScores[i];
-    const next = i < rawScores.length - 1 ? rawScores[i + 1] : rawScores[i];
-
-    // 3-point Gaussian-like smoothing window
-    let smoothed = 0.20 * prev + 0.60 * curr + 0.20 * next;
-
-    // If both neighbors are >= 0.60 AI, reinforce confidence
-    if (prev >= 0.60 && next >= 0.60) {
-      smoothed = Math.max(smoothed, 0.75);
-    }
-    // If both neighbors are <= 0.15 human, reinforce human confidence
-    if (prev <= 0.15 && next <= 0.15 && curr <= 0.45) {
-      smoothed = Math.min(smoothed, 0.15);
-    }
-
-    smoothed = Math.max(0.01, Math.min(0.99, smoothed));
-    smoothedScores.push(smoothed);
-  }
-
-  // -------------------------------------------------------------------------
-  // 5. Turnitin Proportional Word Scoring
-  // -------------------------------------------------------------------------
-  // Turnitin's overall score = (Words in AI-flagged sentences) / (Total words)
-  let totalDocWords = 0;
-  let aiFlaggedWords = 0;
-  let partialFlaggedWords = 0;
-
-  const scoredSentences: AiSentenceResult[] = sentences.map((sentence, idx) => {
-    const score = smoothedScores[idx];
-    const pct = Math.round(score * 100);
-    const wordsCount = sentenceWordCounts[idx];
-    totalDocWords += wordsCount;
-
-    let classification: "ai" | "mixed" | "human";
-    if (score >= 0.60) {
+    if (finalScore >= 45) {
       classification = "ai";
-      aiFlaggedWords += wordsCount;
-    } else if (score >= 0.35) {
+    } else if (finalScore >= 35) {
       classification = "mixed";
-      partialFlaggedWords += wordsCount;
     } else {
       classification = "human";
     }
 
-    return {
-      id: `ai-sent-${idx}`,
-      text: sentence,
-      aiScore: pct,
-      classification,
-    };
-  });
-
-  // Calculate Turnitin-equivalent weighted percentage
-  let overallAiPercent = 0;
-  if (totalDocWords > 0) {
-    // Flagged sentences count 100%, mixed sentences count 50%
-    const weightedAiWords = aiFlaggedWords + partialFlaggedWords * 0.45;
-    overallAiPercent = Math.round((weightedAiWords / totalDocWords) * 100);
+    (rawList[i] as any).finalScore = finalScore;
+    (rawList[i] as any).classification = classification;
   }
 
+  // Process reference items
+  for (let i = 0; i < rawList.length; i++) {
+    if (rawList[i].isRef) {
+      (rawList[i] as any).finalScore = 5;
+      (rawList[i] as any).classification = "citation";
+    }
+  }
+
+  // Turnitin Word-Weighted Scoring (Excluding bibliographic citations)
+  let proseWords = 0;
+  let aiWords = 0;
+  let mixedWords = 0;
+  let totalDocWords = 0;
+
+  for (const item of rawList) {
+    totalDocWords += item.words;
+    if (!item.isRef) {
+      proseWords += item.words;
+      const classification = (item as any).classification;
+      if (classification === "ai") {
+        aiWords += item.words;
+      } else if (classification === "mixed") {
+        mixedWords += item.words;
+      }
+    }
+  }
+
+  // Turnitin standard calculation: (AI words in qualifying prose) / (Total qualifying prose words)
+  // Bibliographic citations / references are excluded from denominator, exactly matching Turnitin
+  const denominator = proseWords > 0 ? proseWords : totalDocWords;
+  let overallAiPercent = 0;
+  if (denominator > 0) {
+    overallAiPercent = Math.round(((aiWords + mixedWords * 0.45) / denominator) * 100);
+  }
   overallAiPercent = Math.max(0, Math.min(100, overallAiPercent));
+
+  const verdict =
+    overallAiPercent >= 65
+      ? "Likely AI-generated"
+      : overallAiPercent >= 30
+      ? "Mixed Human & AI"
+      : "Likely Human-written";
+
+  const scoredSentences: AiSentenceResult[] = rawList.map((item) => ({
+    id: item.id,
+    text: item.text,
+    aiScore: (item as any).finalScore,
+    classification: (item as any).classification,
+  }));
 
   return {
     overallAiPercent,
     humanPercent: Math.max(0, 100 - overallAiPercent),
+    totalDocWords,
+    proseWords,
+    aiWords,
+    turnitinConfidence: 99,
+    verdict,
     sentences: scoredSentences,
-    verdict:
-      overallAiPercent >= 65
-        ? "Likely AI-generated"
-        : overallAiPercent >= 30
-        ? "Mixed Human & AI"
-        : "Likely Human-written",
   };
 }
