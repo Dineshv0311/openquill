@@ -158,6 +158,7 @@ export default function OpenQuillApp() {
   const [humanizerPdfError, setHumanizerPdfError] = useState<string | null>(null);
   const [isDraggingHumanizerPdf, setIsDraggingHumanizerPdf] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [humanizerUploadedFile, setHumanizerUploadedFile] = useState<File | null>(null);
   const humanizerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // AI Chat states
@@ -264,6 +265,7 @@ export default function OpenQuillApp() {
         return;
       }
 
+      setHumanizerUploadedFile(file);
       setHumanizerPdfInfo(data);
       setHumanizerResult(data.humanizedText);
       setHumanizerStats({
@@ -282,19 +284,34 @@ export default function OpenQuillApp() {
   };
 
   const handleDownloadHumanizedPdf = async () => {
-    const textToExport = humanizerPdfInfo?.humanizedText || humanizerResult;
-    if (!textToExport) return;
     setIsGeneratingPdf(true);
     try {
-      const res = await fetch("/api/humanizer/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: textToExport,
-          filename: humanizerPdfInfo?.filename || "humanized-document.pdf",
-          title: humanizerPdfInfo?.filename?.replace(/\.pdf$/i, "") || "OpenQuill Humanized Document",
-        }),
-      });
+      let res: Response;
+      if (humanizerUploadedFile) {
+        // Exact original PDF layout preservation mode
+        const formData = new FormData();
+        formData.append("file", humanizerUploadedFile);
+        formData.append("filename", humanizerPdfInfo?.filename || humanizerUploadedFile.name);
+        formData.append("mode", humanizerMode);
+        res = await fetch("/api/humanizer/generate-pdf", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        // Fallback for text-mode humanizer
+        const textToExport = humanizerPdfInfo?.humanizedText || humanizerResult;
+        if (!textToExport) return;
+        res = await fetch("/api/humanizer/generate-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: textToExport,
+            filename: humanizerPdfInfo?.filename || "humanized-document.pdf",
+            title: humanizerPdfInfo?.filename?.replace(/\.pdf$/i, "") || "OpenQuill Humanized Document",
+            mode: humanizerMode,
+          }),
+        });
+      }
 
       if (!res.ok) {
         throw new Error("Failed to generate PDF document");
@@ -306,6 +323,8 @@ export default function OpenQuillApp() {
       a.href = url;
       const baseName = humanizerPdfInfo?.filename
         ? humanizerPdfInfo.filename.replace(/\.[^/.]+$/, "")
+        : humanizerUploadedFile?.name
+        ? humanizerUploadedFile.name.replace(/\.[^/.]+$/, "")
         : "openquill-humanized";
       a.download = `${baseName}-humanized.pdf`;
       document.body.appendChild(a);
