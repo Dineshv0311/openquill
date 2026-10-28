@@ -77,24 +77,23 @@ function isReferenceSection(sentence: string, isAlreadyInRef: boolean): boolean 
 // ---------------------------------------------------------------------------
 const AI_SYNTACTIC_PATTERNS: RegExp[] = [
   /\bto (address|counter|overcome|mitigate|prevent|facilitate|achieve|evaluate|investigate|benchmark|demonstrate|bridge) (this|these|the|its)\b/i,
-  /\b(this paper|this study|this work|our work|our approach|the proposed method) (presents|formulates|proposes|investigates|evaluates|introduces|benchmarks|aims to)\b/i,
+  /\b(this paper|this study|this work|the proposed method) (presents|formulates|proposes|investigates|evaluates|introduces|benchmarks|aims to)\b/i,
   /\bby (leveraging|employing|utilizing|combining|pairing|incorporating|integrating|coupling|applying)\b/i,
-  /\b(while|whereas) (our|baseline|the proposed|classical)\b/i,
+  /\b(while|whereas) (baseline|the proposed|classical) (achieves|delivers|exhibits)\b/i,
   /\b(under|across|in) (four|three|five|such|these|standardized|various|controlled) (conditions|spatial|perturbation|scenarios|experiments|settings)\b/i,
   /\b(serves to|aims to|seeks to|designed to) (mitigate|bridge|enhance|address|improve|prevent)\b/i,
   /\b(furthermore|moreover|specifically|consequently|notably|crucially|additionally|subsequently|ultimately|in contrast|however, as)\b/i,
   /\b(outperforming|surpassing|exceeding) baseline\b/i,
   /\b(compounding|quadratic) (error|errors|drift)\b/i,
-  /\b(spatial softmax|behavioral cloning|action chunking|diffusion polic|multimodal state|proprioceptive|wrench vector)\b/i,
-  /\b(geometric uncertainties|contact friction|sub-millimeter clearances|precision assembly|robotic manipulation)\b/i,
-  /\b(high-mix low-volume|structured environments|pre-programmed, open-loop|kinematic trajectories)\b/i,
-  /\b(inherently non-deterministic|closed-loop|end-to-end|real-world manipulation)\b/i,
+  /\b(a plethora of|intricate tapestry|delve(s|d)? into|seamlessly integrates?|multifaceted (nature|aspects?)|rich tapestry)\b/i,
+  /\bit is (important|essential|crucial|worth noting) to (note|remember|emphasize)\b/i,
+  /\b(underscores? the (importance|significance|need)|sheds? light on)\b/i,
   /\b(experimental results|empirical results|ablation studies?|simulation evaluation|matched simulation)\b/i,
   /\b(delivers|achieves|demonstrates|exhibits) (high|superior|robust|promising|reliable)\b/i,
   /\b(consistently struggle|discards spatial coordinates|turns dense convolutional activations)\b/i,
   /\b(unified|compact|translation-equivariant|low-dimensional) .*? (representation|embedding|vector|bottleneck)\b/i,
   /\bthese results (support|highlight|demonstrate|indicate|suggest|validate)\b/i,
-  /\b(their|our|prior) (findings|results) (indicate|demonstrate|show|reveal|highlight) that\b/i,
+  /\b(their|prior) (findings|results) (indicate|demonstrate|show|reveal|highlight) that\b/i,
   /\b(in early work|prior work|recent advances|over the past (five|few) decades)\b/i,
   /\b(matters far more for|plays a (crucial|pivotal|key|vital) role in)\b/i,
   /\b(runs on top of|frozen base|two-point contact jamming|terminal assembly)\b/i,
@@ -111,9 +110,9 @@ const PASSIVE_ACADEMIC = /\b(is|are|was|were|been|being) (formulated|evaluated|d
 // Purpose or contrast sentence openers
 const PURPOSE_OR_CONTRAST_OPENERS = /^(to [a-z]+ (this|these|the|its|their)|under [a-z]+ [a-z]+|in order to|by [a-z]+ing|across [a-z]+ [a-z]+|compared to|while [a-z]+|however,|despite|in these [a-z]+|these [a-z]+|over the past)\b/i;
 
-// Human writing signals
+// Human writing signals (conversational + scholarly authorial voice)
 const HUMAN_CONVERSATIONAL_SIGNALS =
-  /\b(don't|can't|won't|it's|we're|i'm|didn't|doesn't|wasn't|let's|gonna|wanna|cool|stuff|pretty much|kinda|sorta|hack|flashlight|drumming|i|my|me|myself|dog|morning|evening|yesterday|tomorrow|feeling|felt|love|hate)\b/i;
+  /\b(don't|can't|won't|it's|we're|i'm|didn't|doesn't|wasn't|let's|gonna|wanna|cool|stuff|pretty much|kinda|sorta|hack|flashlight|drumming|i|my|me|myself|dog|morning|evening|yesterday|tomorrow|feeling|felt|love|hate|we noticed|we observed|our team|in our experiments|in practice|we found that|our setup|our trials|we tested|we coupled|we directly|we designed|we evaluated|we observed that|we verified|in our evaluation|notoriously|we formulated)\b/i;
 
 // ---------------------------------------------------------------------------
 // 4. Per-Sentence Scoring Unit
